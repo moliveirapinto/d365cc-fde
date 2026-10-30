@@ -156,3 +156,34 @@ test("trigger contract is unchanged (the canvas app depends on it)", () => {
   assert.deepEqual(props.text.title, "conversationId");
   assert.deepEqual(props.text_2.title, "dispositionCodes");
 });
+
+test("empty arrays use json('[]'): createArray() needs arguments in Power Automate", () => {
+  for (const s of strings(def.actions)) assert.doesNotMatch(s, /createArray\(\s*\)/, s);
+  assert.match(byName.get("Filter_valid_recommendations").action.inputs.from, /json\('\[\]'\)/);
+});
+
+test("confidence must be a number in [0, 1]", () => {
+  const schema = byName.get("Parse_model_output").action.inputs.schema.properties.recommendations.items.properties;
+  assert.deepEqual(schema.confidence.type, ["number", "null"]);
+  const where = byName.get("Filter_valid_recommendations").action.inputs.where;
+  assert.match(where, /greaterOrEquals\(.*minConfidence/);
+  assert.match(where, /lessOrEquals\(.*,1\)\)$/);
+});
+
+test("the code list is parsed and validated before polling or the AI call", () => {
+  const parse = byName.get("Parse_codes");
+  assert.equal(parse.container, "Try_recommend");
+  assert.equal(parse.action.type, "ParseJson");
+  assert.equal(parse.action.inputs.schema.minItems, 1);
+  assert.deepEqual(parse.action.inputs.schema.items.required, ["dispositionId"]);
+  assert.deepEqual(Object.keys(byName.get("Check_input_valid").action.runAfter), ["Parse_codes"]);
+  assert.equal(byName.get("Valid_ids").action.inputs.from, "@body('Parse_codes')");
+  const inCheck = collect(byName.get("Check_input_valid").action.actions).map((x) => x.name);
+  assert.ok(inCheck.includes("Do_until_summary_found") && inCheck.includes("Run_a_prompt"));
+});
+
+test("a malformed code list is reported as invalid input", () => {
+  const err = byName.get("Build_error_response").action.inputs.error;
+  assert.match(err, /actions\('Parse_codes'\)\?\['status'\],'Failed'/);
+  assert.match(err, /Invalid input/);
+});

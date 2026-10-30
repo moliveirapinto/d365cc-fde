@@ -23,6 +23,9 @@
 //    codes.
 //  - NEW: Warnings when the 500-code fetch limit or the payload size limit
 //    is reached.
+//  - FIX: Evaluating the script again (form reload) retires the previous copy
+//    (unregisters its CIF callback and timer) so one end event cannot open
+//    two modals.
 //  - Everything is now scoped inside an IIFE. Only `onLoad` (the form event
 //    handler, kept for backward compatibility with existing form
 //    registrations) and `__ccaasfdeCopilot` (debug) are exposed on window.
@@ -109,9 +112,23 @@ const GlobalCache = {
   }
 };
 
-// Cleanup every 10 minutes. Replace the timer if the script is evaluated twice.
-try { if (global.__ccaasfdeCopilot?.cleanupTimer) clearInterval(global.__ccaasfdeCopilot.cleanupTimer); } catch {}
+// If the script is evaluated again (form reload), retire the previous copy first. Otherwise its
+// CIF callback stays registered next to the new one and a single end event opens two modals.
+try { global.__ccaasfdeCopilot?.dispose?.(); } catch {}
+let disposed = false;
+const registeredCallbacks = [];
+
+// Cleanup every 10 minutes.
 const cleanupTimer = setInterval(() => GlobalCache.cleanup(), 10 * 60 * 1000);
+
+function dispose() {
+  disposed = true;
+  try { clearInterval(cleanupTimer); } catch {}
+  for (const callback of registeredCallbacks) {
+    try { global.Microsoft?.CIFramework?.removeHandler?.(CONFIG.CIF_END_CONVERSATION_EVENT, callback); } catch {}
+  }
+  registeredCallbacks.length = 0;
+}
 
 // ===== LOGGING =====
 const log = {
@@ -453,16 +470,16 @@ const CIFHandler = {
     const state = getFormState(formContext);
     if (state.cifHandlerId) return;  // Already registered
 
-    state.cifHandlerId = global.Microsoft.CIFramework.addHandler(
-      CONFIG.CIF_END_CONVERSATION_EVENT,
-      async (eventData) => {
-        try {
-          await this.handleEndConversation(formContext, eventData);
-        } catch (e) {
-          log.error("CIF handler error", { error: e?.message });
-        }
+    const callback = async (eventData) => {
+      if (disposed) return;
+      try {
+        await this.handleEndConversation(formContext, eventData);
+      } catch (e) {
+        log.error("CIF handler error", { error: e?.message });
       }
-    );
+    };
+    registeredCallbacks.push(callback);
+    state.cifHandlerId = global.Microsoft.CIFramework.addHandler(CONFIG.CIF_END_CONVERSATION_EVENT, callback);
 
     log.debug("CIF handler registered", { handlerId: state.cifHandlerId });
   },
@@ -730,6 +747,7 @@ try {
   global.__ccaasfdeCopilot = {
     version: CONFIG.VERSION,
     cleanupTimer,
+    dispose,
     debugCache,
     clearCache,
     testOpenModal,

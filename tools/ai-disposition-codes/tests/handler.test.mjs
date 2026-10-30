@@ -25,6 +25,7 @@ class MemStorage {
 // Loads the web resource in an isolated context with mocked Xrm / CIF.
 function createEnv({ codes = RAW_CODES, navigate, source = SOURCE, refresh } = {}) {
   const handlers = {};
+  const allCallbacks = [];
   const calls = { navigate: [], refresh: 0, retrieveMultiple: [] };
   const unref = (t) => { t?.unref?.(); return t; };
 
@@ -34,7 +35,10 @@ function createEnv({ codes = RAW_CODES, navigate, source = SOURCE, refresh } = {
     setInterval: (...a) => unref(setInterval(...a)),
     clearInterval,
     sessionStorage: new MemStorage(),
-    Microsoft: { CIFramework: { addHandler: (name, fn) => { handlers[name] = fn; return "handler-1"; } } },
+    Microsoft: { CIFramework: {
+      addHandler: (name, fn) => { handlers[name] = fn; allCallbacks.push(fn); return "handler-1"; },
+      removeHandler: (name, fn) => { const i = allCallbacks.indexOf(fn); if (i >= 0) allCallbacks.splice(i, 1); },
+    } },
     Xrm: {
       WebApi: {
         retrieveRecord: async () => ({ _msdyn_liveworkstreamid_value: WS }),
@@ -65,7 +69,7 @@ function createEnv({ codes = RAW_CODES, navigate, source = SOURCE, refresh } = {
   const executionContext = { getFormContext: () => formContext };
   const endEvent = (id = CONV) => ({ get: () => JSON.stringify({ liveWorkItemId: id }) });
 
-  return { sandbox, handlers, calls, formContext, executionContext, endEvent };
+  return { sandbox, handlers, allCallbacks, calls, formContext, executionContext, endEvent };
 }
 
 async function loadForm(env) {
@@ -233,4 +237,29 @@ test("evaluating the script twice does not leak a second cleanup interval", () =
   const first = env.sandbox.__ccaasfdeCopilot.cleanupTimer;
   vm.runInContext(SOURCE, env.sandbox);
   assert.notEqual(env.sandbox.__ccaasfdeCopilot.cleanupTimer, first);
+});
+
+test("re-evaluating the script retires the old CIF callback so one end event opens one modal", async () => {
+  const env = createEnv();
+  await loadForm(env);
+  assert.equal(env.allCallbacks.length, 1);
+
+  vm.runInContext(SOURCE, env.sandbox);
+  await loadForm(env);
+  assert.equal(env.allCallbacks.length, 1, "old callback unregistered");
+
+  await Promise.all(env.allCallbacks.map((cb) => cb(env.endEvent())));
+  assert.equal(env.calls.navigate.length, 1);
+});
+
+test("a retired copy ignores end events even if the host cannot remove the callback", async () => {
+  const env = createEnv();
+  await loadForm(env);
+  const oldCallback = env.allCallbacks[0];
+  delete env.sandbox.Microsoft.CIFramework.removeHandler;
+
+  vm.runInContext(SOURCE, env.sandbox);
+  await loadForm(env);
+  await Promise.all([oldCallback, ...env.allCallbacks.filter((c) => c !== oldCallback)].map((cb) => cb(env.endEvent())));
+  assert.equal(env.calls.navigate.length, 1);
 });

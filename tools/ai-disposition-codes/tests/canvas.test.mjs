@@ -96,3 +96,15 @@ test("when the AI has no recommendation a clickable code list is shown and it na
   assert.match(json, /"Name":\s*"galCodes"/);
   assert.match(json, /Collect\(colSelectedCodes, ThisItem\)/);
 });
+
+test("error paths stop the loading spinner so the error message can be shown", () => {
+  const errors = onVisible.match(/Set\(varHasError, true\);/g) || [];
+  assert.equal(errors.length, 2);
+  assert.equal((onVisible.match(/Set\(varHasError, true\);\s*Set\(varIsLoading, false\);/g) || []).length, 2);
+  // visibility depends only on the loading flag, not on whether a payload was passed
+  assert.match(screenYaml, /Visible: =!Coalesce\(varIsLoading, true\)/);
+  assert.match(screenYaml, /Visible: =Coalesce\(varIsLoading, true\)/);
+  assert.doesNotMatch(screenYaml, /Visible: =.*IsBlank\(varPayload\)/);
+  const json = msappEntry("Controls/4.json").toString("utf8");
+  assert.doesNotMatch(json, /IsBlank\(varPayload\) \|\| varIsLoading/);
+});
