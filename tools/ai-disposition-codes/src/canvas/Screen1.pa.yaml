@@ -104,7 +104,7 @@ Screens:
                         If(
                             CountRows(colRecommendations) > 0,
                             "These disposition codes are recommended by Copilot based on the conversation. You can add or remove codes before accepting.",
-                            "No AI recommendations available. Please search and select disposition codes manually."
+                            "No AI recommendations available. Pick a disposition code from the list below, or search to narrow it down."
                         )
                     )
                   VerticalAlign: =VerticalAlign.Middle
@@ -138,8 +138,10 @@ Screens:
                   SuggestionsDisplayName: ="label"
                   SuggestionsKey: ="label"
                   Suggestions_Items: |-
-                    =Filter(colDispositions, Not(label in colSelectedCodes.label))
-                    //Filter(colDispositions, Not(label in colSelectedCodes.label) && (Len(Self.SearchTerm) = 0 || StartsWith(Lower(label), Lower(Self.SearchTerm))))
+                    =Filter(
+                        colDispositions,
+                        Not(label in colSelectedCodes.label) && (Len(Self.SearchTerm) = 0 || Self.SearchTerm in label)
+                    )
                   TagsDisplayName: ="label"
                   TagsKey: ="label"
                   Theme: |-
@@ -156,6 +158,42 @@ Screens:
                         FieldName: ="label"
                         FieldType: ="s"
                         Order: =1
+            - galCodes:
+                Control: Gallery@2.10.0
+                Variant: Vertical
+                Properties:
+                  BorderColor: =RGBA(200, 200, 200, 1)
+                  BorderThickness: =1
+                  FillPortions: =1
+                  Height: =160
+                  Items: |-
+                    =Filter(
+                        colDispositions,
+                        Not(label in colSelectedCodes.label) && (Len(Picker1.SearchTerm) = 0 || Picker1.SearchTerm in label)
+                    )
+                  LayoutMinHeight: =100
+                  LayoutMinWidth: =200
+                  OnSelect: =Collect(colSelectedCodes, ThisItem)
+                  TemplatePadding: =0
+                  TemplateSize: =40
+                  Visible: =!varHasError && CountRows(colRecommendations) = 0
+                  Width: =200
+                  X: =40
+                  Y: =40
+                Children:
+                  - lblCodeName:
+                      Control: Text@0.0.51
+                      Properties:
+                        Align: =Align.Left
+                        Font: =Font.'Segoe UI'
+                        Height: =40
+                        PaddingLeft: =12
+                        Size: =12
+                        Text: =ThisItem.label
+                        VerticalAlign: =VerticalAlign.Middle
+                        Width: =Parent.TemplateWidth
+                        X: =0
+                        Y: =0
             - containerAction:
                 Control: GroupContainer@1.3.0
                 Variant: AutoLayout

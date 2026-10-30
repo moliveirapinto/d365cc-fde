@@ -77,3 +77,22 @@ test("save: unchanged original formula (verified behavior)", () => {
 test("save button stays disabled while saving or when nothing is selected", () => {
   assert.match(screenYaml, /DisplayMode: =If\(IsEmpty\(colSelectedCodes\) \|\| varIsSaving, DisplayMode\.Disabled, DisplayMode\.Edit\)/);
 });
+test("picker suggestions exclude selected codes and narrow as the user types", () => {
+  const sugg = formulas.find((f) => f.name === "Suggestions_Items").formula;
+  assert.match(sugg, /Filter\(\s*colDispositions,/);
+  assert.match(sugg, /Not\(label in colSelectedCodes\.label\)/);
+  assert.match(sugg, /Len\(Self\.SearchTerm\) = 0 \|\| Self\.SearchTerm in label/);
+  const json = msappEntry("Controls/4.json").toString("utf8");
+  assert.match(json, /Self\.SearchTerm in label/);
+});
+test("when the AI has no recommendation a clickable code list is shown and it narrows with the picker search", () => {
+  const items = formulas.find((f) => f.name === "Items" && /Picker1\.SearchTerm/.test(f.formula));
+  assert.ok(items, "gallery Items formula");
+  assert.match(items.formula, /Not\(label in colSelectedCodes\.label\)/);
+  assert.match(items.formula, /Len\(Picker1\.SearchTerm\) = 0 \|\| Picker1\.SearchTerm in label/);
+  assert.match(screenYaml, /OnSelect: =Collect\(colSelectedCodes, ThisItem\)/);
+  assert.match(screenYaml, /Visible: =!varHasError && CountRows\(colRecommendations\) = 0/);
+  const json = msappEntry("Controls/4.json").toString("utf8");
+  assert.match(json, /"Name":\s*"galCodes"/);
+  assert.match(json, /Collect\(colSelectedCodes, ThisItem\)/);
+});
